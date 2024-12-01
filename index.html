@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <title>Creative Writing Prompt Generator</title>
+  <link rel="stylesheet" href="styles.css">
+
+  <script type="module">
+    // Firebase app SDK
+    import {
+      initializeApp
+    } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+    import {
+      getAuth,
+      signInAnonymously,
+      signOut,
+      createUserWithEmailAndPassword,
+      signInWithEmailAndPassword,
+      onAuthStateChanged
+    } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
+    import {
+      getFirestore,
+      collection,
+      getDocs,
+      addDoc,
+      updateDoc,
+      doc,
+      serverTimestamp,
+      getDoc,
+      query,
+      where
+    } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyD1vwLT64a2s9qk19UwbvSYEWDk9O39VNY",
+      authDomain: "creative-writing-fe00c.firebaseapp.com",
+      projectId: "creative-writing-fe00c",
+      storageBucket: "creative-writing-fe00c.appspot.com",
+      messagingSenderId: "390080423128",
+      appId: "1:390080423128:web:25c700f3bbe522b56263ad",
+      measurementId: "G-YQZRYXPGMH"
+    };
+    // Initialize Firebase
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const auth = getAuth(app);
+
+    // DOM Elements
+    const generatePromptButton = document.getElementById('generate-prompt');
+    const promptText = document.getElementById('prompt');
+    const submitStoryButton = document.getElementById('submit-story');
+    const storyText = document.getElementById('story-text');
+    const storiesList = document.getElementById('stories-list');
+    const myStoriesList = document.getElementById('my-stories-list');
+    const loading = document.getElementById('loading');
+    const loginButton = document.getElementById('login-btn');
+    const logoutButton = document.getElementById('logout-btn');
+    const userNameElement = document.getElementById('user-name');
+    const emailInput = document.getElementById('email');
+    const passwordInput = document.getElementById('password');
+    const signUpButton = document.getElementById('sign-up-btn');
+
+    // Handle login/signup and logout
+    loginButton.addEventListener('click', () => signInAnonymously(auth).catch(console.error));
+
+    // Handle user sign-up (using email and password)
+    signUpButton.addEventListener('click', () => {
+      const email = emailInput.value.trim();
+      const password = passwordInput.value.trim();
+      if (email && password) {
+        createUserWithEmailAndPassword(auth, email, password)
+          .then((userCredential) => {
+            // Successfully created user
+            const user = userCredential.user;
+            alert('User signed up successfully!');
+          })
+          .catch((error) => {
+            console.error("Error signing up:", error.code, error.message);
+            alert(error.message);
+          });
+      } else {
+        alert("Please enter a valid email and password.");
+      }
+    });
+
+    // Handle user login (using email and password)
+    loginButton.addEventListener('click', () => {
+      const email = emailInput.value.trim();
+      const password = passwordInput.value.trim();
+      if (email && password) {
+        signInWithEmailAndPassword(auth, email, password)
+          .then((userCredential) => {
+            // Successfully signed in
+            const user = userCredential.user;
+            alert('Logged in successfully!');
+          })
+          .catch((error) => {
+            console.error("Error logging in:", error.code, error.message);
+            alert(error.message);
+          });
+      } else {
+        alert("Please enter a valid email and password.");
+      }
+    });
+
+    logoutButton.addEventListener('click', () => signOut(auth).catch(console.error));
+
+    // Monitor authentication state changes
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        loginButton.style.display = 'none';
+        logoutButton.style.display = 'inline-block';
+        userNameElement.textContent = user.email;
+        document.getElementById('user-info').style.display = 'inline-block';
+        submitStoryButton.disabled = false;
+      } else {
+        loginButton.style.display = 'inline-block';
+        logoutButton.style.display = 'none';
+        document.getElementById('user-info').style.display = 'none';
+        submitStoryButton.disabled = true;
+      }
+    });
+
+    // Function to get a random prompt
+    async function getRandomPrompt() {
+      const promptsRef = collection(db, 'prompts');
+      const snapshot = await getDocs(promptsRef);
+      const prompts = snapshot.docs.map(doc => doc.data().text);
+      const randomIndex = Math.floor(Math.random() * prompts.length);
+      return prompts[randomIndex];
+    }
+
+    // Show random prompt when button clicked
+    generatePromptButton.addEventListener('click', async () => {
+      loading.style.display = 'block';
+      try {
+        const randomPrompt = await getRandomPrompt();
+        promptText.textContent = randomPrompt;
+      } catch (error) {
+        console.error("Error fetching prompt: ", error);
+      } finally {
+        loading.style.display = 'none';
+      }
+    });
+
+    // Function to submit story to Firestore
+    async function submitStory(storyText) {
+      try {
+        await addDoc(collection(db, 'stories'), {
+          text: storyText,
+          timestamp: serverTimestamp(),
+          upvotes: 0,
+          userId: auth.currentUser.uid
+        });
+        alert("Story submitted successfully!");
+        loadStories(); // Reload stories after submission
+      } catch (error) {
+        console.error("Error submitting story: ", error);
+      }
+    }
+
+    // Submit button event listener
+    submitStoryButton.addEventListener('click', () => {
+      const story = storyText.value.trim();
+      if (story !== "") {
+        submitStory(story);
+        storyText.value = ""; // Clear the textarea
+      } else {
+        alert("Please write something before submitting.");
+      }
+    });
+
+    // Function to load stories from Firestore
+    async function loadStories() {
+      storiesList.innerHTML = ""; // Clear previous stories
+      loading.style.display = 'block';
+
+      const storiesRef = collection(db, 'stories');
+      const snapshot = await getDocs(storiesRef);
+
+      snapshot.docs.forEach(doc => {
+        const story = doc.data();
+        const li = document.createElement('li');
+        li.textContent = story.text;
+
+        // Create upvote button
+        const upvoteButton = document.createElement('button');
+        upvoteButton.textContent = `Upvote (${story.upvotes})`;
+        upvoteButton.addEventListener('click', () => upvoteStory(doc.id, story.upvotes));
+
+        li.appendChild(upvoteButton);
+        storiesList.appendChild(li);
+      });
+
+      loading.style.display = 'none';
+    }
+
+    // Function to upvote a story
+    async function upvoteStory(storyId, currentUpvotes) {
+      try {
+        const userId = auth.currentUser.uid;
+        const storyRef = doc(db, 'stories', storyId);
+        const storySnap = await getDoc(storyRef);  // Fetching the story document
+        const storyData = storySnap.data();
+
+        // Check if user already upvoted
+        const userUpvotesRef = collection(storyRef, 'upvotes');
+        const userUpvotesQuery = query(userUpvotesRef, where("userId", "==", userId));
+        const userUpvotesSnap = await getDocs(userUpvotesQuery);
+
+        if (!userUpvotesSnap.empty) {
+          alert("You already upvoted this story!");
+        } else {
+          // Add user to upvotes collection and increment upvote count
+          await addDoc(userUpvotesRef, {
+            userId
+          });
+          await updateDoc(storyRef, {
+            upvotes: currentUpvotes + 1
+          });
+          loadStories(); // Reload stories to reflect upvote
+        }
+      } catch (error) {
+        console.error("Error upvoting story: ", error);
+      }
+    }
+
+    // Load stories on page load
+    window.addEventListener('DOMContentLoaded', loadStories);
+  </script>
+
+</head>
+
+<body>
+  <header>
+    <h1>Creative Writing Prompt Generator</h1>
+    <p>Click the button to get your writing prompt!</p>
+    <div id="user-info" style="display: none;">
+      <span id="user-name"></span>
+      <button id="logout-btn">Logout</button>
+    </div>
+    <div id="alert-box" style="color: red;"></div>
+    <div id="login-form">
+      <input type="email" id="email" placeholder="Enter your email">
+      <input type="password" id="password" placeholder="Enter your password">
+      <button id="login-btn">Login</button>
+      <button id="sign-up-btn">Sign Up</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="prompt-section">
+      <button id="generate-prompt" class="button">Get a Random Writing Prompt</button>
+      <p id="prompt" class="prompt-text">Your prompt will appear here...</p>
+    </section>
+
+    <section class="submission-section">
+      <h2>Write Your Story</h2>
+      <textarea id="story-text" placeholder="Start writing your story here..." rows="8" cols="50"></textarea>
+      <br>
+      <button id="submit-story" class="button" disabled>Submit Your Story</button>
+    </section>
+
+    <section class="my-stories-section">
+      <h2>My Stories</h2>
+      <div id="loading" style="display: none;">Loading...</div>
+      <ul id="my-stories-list"></ul>
+    </section>
+
+    <section class="stories-section">
+      <h2>Recent Stories</h2>
+      <ul id="stories-list"></ul>
+    </section>
+  </main>
+
+</body>
+
+</html>
